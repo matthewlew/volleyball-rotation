@@ -259,115 +259,218 @@ input {
 .lineup-header {
   display: flex;
   align-items: center;
-  margin-bottom: 16px;
-}
-.back-btn {
-  margin-right: 16px;
-  font-weight: 700;
-  color: var(--text-main);
-}
-.lineup-header h1 {
-  font-size: 20px;
-}
-
-.tabs {
-  display: flex;
   gap: 8px;
   margin-bottom: 16px;
 }
-.tabs button {
-  flex-grow: 1;
-  padding: 8px;
-  border-radius: var(--border-radius);
-  background-color: #E2E8F0;
-  font-weight: 700;
-  color: #64748B;
+.lineup-header h1 {
+  flex: 1;
+  font-size: 20px;
 }
-.tabs button[aria-selected="true"] {
-  background-color: var(--text-main);
-  color: var(--text-inverse);
+.back-btn {
+  font-weight: 700;
+  color: var(--text-main);
+  flex-shrink: 0;
 }
 
+/* Undo / Redo */
+.undo-redo {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.undo-redo button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  background: #E2E8F0;
+  border-radius: 6px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.undo-redo button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Before Serve / Ball in Play toggle */
+.mode-toggle {
+  display: flex;
+  background: #E2E8F0;
+  border-radius: var(--border-radius);
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.mode-toggle button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-height: 36px;
+  transition: background-color 0.15s, color 0.15s;
+}
+.mode-toggle button.active {
+  background: var(--text-main);
+  color: #fff;
+}
+
+/* Serve indicator */
+.serve-indicator {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+/* Court */
 .court-container {
   background-color: var(--court-color);
   border-radius: var(--border-radius);
-  padding: 16px;
-  position: relative;
-  aspect-ratio: 1;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
+  padding: 10px 8px 12px;
+  margin-bottom: 12px;
 }
-.net-line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
+.net-bar {
+  height: 5px;
   background-color: var(--net-color);
-  border-top-left-radius: var(--border-radius);
-  border-top-right-radius: var(--border-radius);
+  border-radius: 3px;
+  margin: 4px 4px 8px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.net-bar::after {
+  content: 'NET';
+  position: absolute;
+  background: var(--net-color);
+  color: var(--court-color);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  padding: 1px 6px;
+  border-radius: 2px;
 }
 .court-grid {
-  flex-grow: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 8px;
-  align-items: center;
-  justify-items: center;
+  grid-template-rows: repeat(2, auto);
+  gap: 4px;
 }
-/* P4, P3, P2 then P5, P6, P1 */
-.court-token {
-  background-color: #FFFFFF;
-  border-radius: 50%;
-  width: 72px;
-  height: 72px;
+
+/* Court cell */
+.court-cell {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  padding: 6px 4px 8px;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+  position: relative;
+}
+.court-cell.drag-over {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+.pos-number {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.28);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  align-self: flex-start;
+  padding-left: 2px;
+}
+
+/* Token: avatar circle + name below */
+.court-token {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background-color: #fff;
+  display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  border-top: 6px solid var(--text-secondary);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  transition: transform 0.3s;
+  border-top: 5px solid var(--text-secondary);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.court-token:active { cursor: grabbing; }
+.court-token.dragging {
+  opacity: 0.45;
+  transform: scale(0.88);
+}
+.court-token.selected {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--net-color);
+  transform: scale(1.08);
+}
+.court-token.is-serving {
+  box-shadow: 0 0 0 3px var(--net-color), 0 4px 8px rgba(0,0,0,0.3);
 }
 .court-token.role-S { border-top-color: var(--setter-color); }
 .court-token.role-M { border-top-color: var(--middle-color); }
 .court-token.role-O { border-top-color: var(--outside-color); }
 
-.token-name {
+.token-avatar {
   font-weight: 700;
-  font-size: 14px;
-  color: var(--text-main);
-  margin-top: 2px;
+  font-size: 17px;
 }
-.token-role {
-  font-weight: 700;
-  font-size: 16px;
-}
-.court-token.role-S .token-role { color: var(--setter-color); }
-.court-token.role-M .token-role { color: var(--middle-color); }
-.court-token.role-O .token-role { color: var(--outside-color); }
+.court-token.role-S .token-avatar { color: var(--setter-color); }
+.court-token.role-M .token-avatar { color: var(--middle-color); }
+.court-token.role-O .token-avatar { color: var(--outside-color); }
 
-.token-mic {
+.token-mic-icon {
   position: absolute;
-  right: -12px;
-  bottom: 24px;
-  font-size: 16px;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  pointer-events: none;
 }
-.token-info-btn {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  background-color: var(--bg-color);
-  border-radius: 50%;
-  font-size: 12px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+/* Name appears OUTSIDE the circle, below it */
+.token-name-label {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 5px;
+  line-height: 1.2;
+}
+.token-name-label.serving {
+  color: var(--net-color);
+}
+
+/* "Ball in Play" action note */
+.token-action-note {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 2px;
+  letter-spacing: 0.3px;
+}
+.play-mode .token-action-note {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Slide-in animation for new server (position 1) after rotation */
+@keyframes slideInFromRight {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.court-cell[data-pos="1"].just-rotated .court-token {
+  animation: slideInFromRight 0.35s ease-out;
 }
 
 .bench-row {
@@ -381,15 +484,74 @@ input {
 
 .rotation-controls {
   display: flex;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .rotation-controls button {
   flex-grow: 1;
-  padding: 12px;
+  padding: 11px;
   background-color: #E2E8F0;
   border-radius: var(--border-radius);
   font-weight: 700;
+  font-size: 14px;
+}
+
+/* Suggestion cards */
+.suggestions-section {
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+.suggestions-section h2 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.suggestion-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.suggestion-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border-radius: var(--border-radius);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.suggestion-card.active {
+  border-color: var(--text-main);
+}
+.suggestion-card:hover {
+  border-color: #CBD5E1;
+}
+.suggestion-stars {
+  color: #F59E0B;
+  font-size: 15px;
+  letter-spacing: -2px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.suggestion-info {
+  flex: 1;
+  min-width: 0;
+}
+.suggestion-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+.suggestion-detail {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fit-table {
