@@ -66,16 +66,12 @@ const App = {
   renderRoster(container) {
     const present = this.state.p.filter(p => p.here).length;
     const setters = this.state.p.filter(p => p.here && p.pos.includes('S')).length;
-    const hasError = present < 6 || setters < 2;
+    const middles = this.state.p.filter(p => p.here && p.pos.includes('M')).length;
+    const outsides = this.state.p.filter(p => p.here && p.pos.includes('O')).length;
+    const hasAnyRoles = this.state.p.some(p => p.here && p.pos.length > 0);
 
-    let solverResult = null;
-    if (!hasError) {
-      solverResult = Solver.solve(this.state.p);
-    }
-
-    const errorMsg = solverResult && solverResult.error ? solverResult.error :
-                    (present < 6 ? `You have ${present} players checked in. Need at least 6 to play.` :
-                    (setters < 2 ? `4-2 needs 2 setters. Only ${this.state.p.filter(p=>p.here&&p.pos.includes("S")).map(p=>p.name).join(', ') || 'nobody'} can set — does anyone else want to flex?` : ''));
+    const warningMsg = this.state.generateError ||
+                      (present < 6 ? `You have ${present} players checked in. Need at least 6 to play.` : '');
 
     let html = `
       <header class="roster-header">
@@ -83,15 +79,17 @@ const App = {
         <input type="text" class="team-name-input" value="${this.escapeHtml(this.state.t)}" aria-label="Team name" onchange="App.updateTeamName(this.value)">
       </header>
 
+      <p class="value-prop">Generate a valid 4-2 volleyball rotation for your rec league — free, no signup.</p>
+
       <div class="status-row" aria-live="polite">
-        <span class="${present < 6 ? 'warning-text' : ''}">Present: ${present}</span> /
-        <span class="${setters < 2 ? 'warning-text' : ''}">Setters: ${setters}</span>
+        <span class="${present < 6 ? 'warning-text' : ''}">Present: ${present}</span>
+        ${hasAnyRoles ? ` &middot; S: ${setters} &middot; M: ${middles} &middot; O: ${outsides}` : ''}
       </div>
 
-      ${errorMsg ? `<div class="warning-banner" role="alert">${errorMsg}</div>` : ''}
+      ${warningMsg ? `<div class="warning-banner" role="alert">${warningMsg}</div>` : ''}
 
       <ul class="player-list">
-        ${this.state.p.map(p => this.renderPlayerRow(p)).join('')}
+        ${this.state.p.map((p, i) => this.renderPlayerRow(p, i + 1)).join('')}
       </ul>
 
       <div class="add-player-row">
@@ -99,31 +97,43 @@ const App = {
         <button onclick="App.addPlayer()" aria-label="Add player">Add</button>
       </div>
 
-      <button class="cta-button" onclick="App.generateLineup()" ${errorMsg ? 'aria-disabled="true" disabled' : ''}>
+      <button class="cta-button" onclick="App.generateLineup()">
         Generate lineup &rarr;
       </button>
-      <p class="micro-copy">Valid 4-2 &middot; no ads &middot; free forever</p>
 
       ${this.state.p.length === 0 ? `<button class="demo-button" onclick="App.loadDemo()">Load demo</button>` : ''}
+
+      <div class="how-it-works">
+        <h2>How it works</h2>
+        <ol>
+          <li>Enter your players and check who&rsquo;s present today</li>
+          <li>Tag positions: <strong>S</strong> = Setter, <strong>M</strong> = Middle, <strong>O</strong> = Outside. Players with no tag can play anywhere.</li>
+          <li>Tap <strong>Generate lineup</strong> to get a valid 4-2 rotation</li>
+          <li>Rotate through all 6 positions and share with your team</li>
+        </ol>
+        <a href="learn.html" class="learn-link">Learn about 4-2 rotations &rarr;</a>
+      </div>
     `;
 
     container.innerHTML = html;
   },
 
-  renderPlayerRow(p) {
+  renderPlayerRow(p, num) {
     const isPrimaryS = p.pos[0] === 'S';
     const isPrimaryM = p.pos[0] === 'M';
     const isPrimaryO = p.pos[0] === 'O';
+    const placeholder = `P${num}`;
 
     return `
       <li class="player-row">
         <button class="check-toggle ${p.here ? 'checked' : ''}"
                 onclick="App.toggleHere('${p.id}')"
-                aria-label="${p.name} is here"
+                aria-label="${p.name || placeholder} is here"
                 role="switch"
                 aria-checked="${p.here}"></button>
         <input type="text" class="player-name-input" value="${this.escapeHtml(p.name)}"
-               aria-label="Edit name for ${this.escapeHtml(p.name)}"
+               placeholder="${placeholder}"
+               aria-label="Edit name for ${this.escapeHtml(p.name || placeholder)}"
                onchange="App.updatePlayerName('${p.id}', this.value)" />
 
         <div class="pos-toggles">
@@ -163,7 +173,7 @@ const App = {
   updatePlayerName(id, val) {
     const p = this.state.p.find(player => player.id === id);
     if (p) {
-      p.name = val.trim() || 'Player'; // Fallback to 'Player' if empty
+      p.name = val.trim(); // Allow empty; display fallback is handled per-context
       this.updateUrl();
       // We don't re-render immediately to prevent losing focus if they are tabbing through
       // The DOM is already updated since it's an input field.
@@ -175,6 +185,7 @@ const App = {
   toggleHere(id) {
     const p = this.state.p.find(player => player.id === id);
     if (p) p.here = !p.here;
+    this.state.generateError = null;
     this.updateUrl();
     this.render();
   },
@@ -188,6 +199,7 @@ const App = {
     } else {
       p.pos.push(pos);
     }
+    this.state.generateError = null;
     this.updateUrl();
     this.render();
   },
@@ -212,6 +224,7 @@ const App = {
 
   removePlayer(id) {
     this.state.p = this.state.p.filter(p => p.id !== id);
+    this.state.generateError = null;
     this.updateUrl();
     this.render();
   },
@@ -234,8 +247,13 @@ const App = {
   },
 
   generateLineup() {
+    this.state.generateError = null;
     const result = Solver.solve(this.state.p);
-    if (result.error) return; // shouldn't happen due to disabled state
+    if (result.error) {
+      this.state.generateError = result.error;
+      this.render();
+      return;
+    }
 
     // Choose the best proposal
     const best = result.proposals[0];
@@ -284,7 +302,10 @@ const App = {
     const player = this.state.p.find(p => p.id === playerId);
     if (!player) return '';
 
-    const name = Share.formatName(player.name, this.state.p);
+    const playerIndex = this.state.p.findIndex(x => x.id === playerId) + 1;
+    const displayName = player.name && player.name.trim()
+      ? Share.formatName(player.name, this.state.p)
+      : `P${playerIndex}`;
     const role = this.getPosRole(pNum);
     const isServing = pNum == 1;
 
@@ -292,8 +313,8 @@ const App = {
     return `
       <div class="court-token role-${role}" id="pos-${pNum}"
            ${isReadOnly ? '' : `onclick="App.showRoleInfo('${role}', ${pNum})"`}
-           role="button" aria-label="${name}, ${this.getRoleName(role)}${isServing ? ' (serving)' : ''}">
-        <div class="token-name">${this.escapeHtml(name)}</div>
+           role="button" aria-label="${displayName}, ${this.getRoleName(role)}${isServing ? ' (serving)' : ''}">
+        <div class="token-name">${this.escapeHtml(displayName)}</div>
         <div class="token-role">${role}</div>
         ${isServing ? `<div class="token-mic">🎤</div>` : ''}
         ${!isReadOnly ? `<button class="token-info-btn" aria-label="Role info" onclick="event.stopPropagation(); App.showRoleInfo('${role}', ${pNum})">ⓘ</button>` : ''}

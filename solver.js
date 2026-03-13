@@ -35,7 +35,7 @@ const Solver = {
 
   scorePosition(player, role) {
     const pos = player.pos; // ["S", "O", "M"]
-    if (!pos || pos.length === 0) return 0;
+    if (!pos || pos.length === 0) return 1; // Untagged: can play any role
     const index = pos.indexOf(role);
     if (index === 0) return 3; // Primary
     if (index === 1) return 2; // Secondary
@@ -72,28 +72,14 @@ const Solver = {
       return { error: `You have ${present.length} players checked in. Need at least 6 to play.` };
     }
 
-    const setters = present.filter(p => p.pos.includes("S"));
-    if (setters.length < 2) {
-      const setterNames = setters.map(s => s.name).join(", ");
-      const nameText = setterNames ? setterNames : "nobody";
-      return { error: `4-2 needs 2 setters. Only ${nameText} can set — does anyone else want to flex?` };
-    }
-
-    // Check if any player has no positions tagged
-    const noPos = present.find(p => p.pos.length === 0);
-    if (noPos) {
-       return { error: `Tag each player with S, M, or O before generating.` };
-    }
-
-
     const allLineups = [];
 
     // 3. Generate all combinations of 6 players
     const combos = this.getCombinations(present, 6);
 
     for (const combo of combos) {
-      // Find setters in this 6-player combo
-      const comboSetters = combo.filter(p => p.pos.includes("S"));
+      // Find setters in this 6-player combo (untagged players can play any role incl. setter)
+      const comboSetters = combo.filter(p => p.pos.includes("S") || p.pos.length === 0);
       if (comboSetters.length < 2) continue;
 
       // Try all pairs of setters
