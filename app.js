@@ -183,6 +183,7 @@ const App = {
   },
 
   toggleHere(id) {
+    this.haptic('light');
     const p = this.state.p.find(player => player.id === id);
     if (p) p.here = !p.here;
     this.state.generateError = null;
@@ -191,6 +192,7 @@ const App = {
   },
 
   togglePos(id, pos) {
+    this.haptic('light');
     const p = this.state.p.find(player => player.id === id);
     if (!p) return;
     const idx = p.pos.indexOf(pos);
@@ -223,6 +225,7 @@ const App = {
   },
 
   removePlayer(id) {
+    this.haptic('light');
     this.state.p = this.state.p.filter(p => p.id !== id);
     this.state.generateError = null;
     this.updateUrl();
@@ -250,10 +253,12 @@ const App = {
     this.state.generateError = null;
     const result = Solver.solve(this.state.p);
     if (result.error) {
+      this.haptic('error');
       this.state.generateError = result.error;
       this.render();
       return;
     }
+    this.haptic('success');
 
     // Choose the best proposal
     const best = result.proposals[0];
@@ -398,25 +403,37 @@ const App = {
         </div>
       ` : ''}
 
-      <p class="serve-indicator" aria-live="polite">
-        🎤 <strong>${this.escapeHtml(serverName)}</strong> serves &middot; Rotation ${serveNum}/6
-      </p>
-
-      <div class="court-container ${viewMode}-mode" role="img" aria-label="${ariaLabel}">
-        <div class="net-bar"></div>
-        <div class="court-grid">
-          ${[4,3,2,5,6,1].map(posNum => this.renderCourtCell(posNum, isReadOnly, viewMode)).join('')}
+      <div class="serve-indicator-wrap" aria-live="polite">
+        <div class="serve-indicator">
+          <span class="serve-mic">🎤</span>
+          <span class="serve-name">${this.escapeHtml(serverName)}</span>
+          <span class="serve-meta">serves</span>
+          <span class="rotation-badge">${serveNum} <span class="rotation-of">/ 6</span></span>
         </div>
       </div>
 
+      <div class="court-and-bench">
+        <div class="court-container ${viewMode}-mode" role="img" aria-label="${ariaLabel}">
+          <div class="net-bar"></div>
+          <div class="court-row">
+            ${[4,3,2].map(posNum => this.renderCourtCell(posNum, isReadOnly, viewMode)).join('')}
+          </div>
+          <div class="attack-line"></div>
+          <div class="court-row">
+            ${[5,6,1].map(posNum => this.renderCourtCell(posNum, isReadOnly, viewMode)).join('')}
+          </div>
+        </div>
+        ${!isReadOnly ? this.renderBenchSidebar() : ''}
+      </div>
+
+      ${isReadOnly ? `<div class="bench-row"><strong>Bench:</strong> ${benchHtml}</div>` : ''}
+
       ${!isReadOnly ? `
         <div class="rotation-controls">
-          <button onclick="App.simulateRotation(-1)" aria-label="Undo rotation">&larr; Undo Rotate</button>
-          <button onclick="App.simulateRotation(1)" aria-label="Rotate clockwise">Rotate &rarr;</button>
+          <button onclick="App.simulateRotation(-1)" aria-label="Undo rotation">← Undo</button>
+          <button onclick="App.simulateRotation(1)" aria-label="Rotate clockwise">Rotate →</button>
         </div>
       ` : ''}
-
-      <div class="bench-row"><strong>Bench:</strong> ${benchHtml}</div>
 
       ${!isReadOnly ? `
         <table class="fit-table">
@@ -480,6 +497,39 @@ const App = {
     }
   },
 
+  // ── Haptics ────────────────────────────────────────────────────────────────
+  haptic(type = 'light') {
+    if (!('vibrate' in navigator)) return;
+    const p = { light:[8], select:[12], swap:[15,8,15], rotate:[10,25,10], error:[40,20,40], success:[10,40,10] };
+    navigator.vibrate(p[type] ?? [8]);
+  },
+
+  // ── Bench sidebar (shows beside court) ─────────────────────────────────────
+  renderBenchSidebar() {
+    const bench = this.state.bench || [];
+    if (bench.length === 0) {
+      return `<div class="bench-sidebar"><span class="bench-label">Bench</span><span class="bench-empty">—</span></div>`;
+    }
+    const tokens = bench.map(id => {
+      const p = this.state.p.find(x => x.id === id);
+      if (!p) return '';
+      const idx = this.state.p.findIndex(x => x.id === id) + 1;
+      const name = p.name?.trim() || `P${idx}`;
+      const short = Share.formatName(name, this.state.p);
+      const role = p.pos[0] || '';
+      return `
+        <div class="bench-token">
+          <div class="bench-avatar${role ? ` role-${role}` : ''}">${role || short[0]?.toUpperCase() || '?'}</div>
+          <div class="bench-name">${this.escapeHtml(short)}</div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="bench-sidebar">
+        <span class="bench-label">Bench</span>
+        ${tokens}
+      </div>`;
+  },
+
   // ── History ────────────────────────────────────────────────────────────────
   pushHistory() {
     const history = this.state.lineupHistory || [];
@@ -493,6 +543,7 @@ const App = {
   undoLineup() {
     const history = this.state.lineupHistory || [];
     if ((this.state.historyIndex || 0) > 0) {
+      this.haptic('light');
       this.state.historyIndex--;
       const snap = history[this.state.historyIndex];
       this.state.lineup = { ...snap.lineup };
@@ -507,6 +558,7 @@ const App = {
     const history = this.state.lineupHistory || [];
     const idx = this.state.historyIndex || 0;
     if (idx < history.length - 1) {
+      this.haptic('light');
       this.state.historyIndex++;
       const snap = history[this.state.historyIndex];
       this.state.lineup = { ...snap.lineup };
@@ -537,6 +589,7 @@ const App = {
     const from = this.state.dragFrom;
     this.state.dragFrom = null;
     if (from === null || from === undefined || from === targetPos) return;
+    this.haptic('swap');
     this.pushHistory();
     const tmp = this.state.lineup[targetPos];
     this.state.lineup[targetPos] = this.state.lineup[from];
@@ -550,12 +603,14 @@ const App = {
     const prev = this.state.selectedPos;
     if (prev === posNum) {
       // Deselect
+      this.haptic('light');
       this.state.selectedPos = null;
       this.render();
       return;
     }
     if (prev !== null && prev !== undefined) {
       // Swap prev ↔ posNum
+      this.haptic('swap');
       this.pushHistory();
       const tmp = this.state.lineup[posNum];
       this.state.lineup[posNum] = this.state.lineup[prev];
@@ -566,6 +621,7 @@ const App = {
       this.showToast('Swapped!');
     } else {
       // First tap — select
+      this.haptic('select');
       this.state.selectedPos = posNum;
       // Highlight via class without full re-render for snappiness
       document.querySelectorAll('.court-token.selected').forEach(el => el.classList.remove('selected'));
@@ -622,6 +678,7 @@ const App = {
   simulateRotation(direction) {
     // direction = 1 for clockwise (rotate), -1 for counter-clockwise (undo)
     // 4->3, 3->2, 2->1, 1->6, 6->5, 5->4
+    this.haptic('rotate');
     this.pushHistory();
     this.state.rotationCount = (this.state.rotationCount || 0) + direction;
 
