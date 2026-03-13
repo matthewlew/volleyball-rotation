@@ -90,7 +90,7 @@ const App = {
       <button class="cta-button" onclick="App.generateLineup()" ${errorMsg ? 'aria-disabled="true" disabled' : ''}>
         Generate lineup &rarr;
       </button>
-      <p class="micro-copy">Valid 4-2 &middot; no ads &middot; free forever</p>
+      <p class="micro-copy">Valid 4-2 &middot; free forever &middot; <a href="/blog" style="color: inherit; text-decoration: underline;">Blog</a></p>
 
       ${this.state.p.length === 0 ? `<button class="demo-button" onclick="App.loadDemo()">Load demo</button>` : ''}
     `;
