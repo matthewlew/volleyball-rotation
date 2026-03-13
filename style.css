@@ -121,10 +121,23 @@ input {
   border-color: #10B981;
   background-color: #10B981;
 }
-.player-name {
+.player-name-input {
   flex-grow: 1;
   font-weight: 500;
   font-size: 18px;
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--text-main);
+  padding: 4px;
+  margin-right: 8px;
+  border-radius: 4px;
+  min-width: 0; /* allows input to shrink in flex container */
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.player-name-input:hover,
+.player-name-input:focus {
+  border-color: #CBD5E1;
+  background-color: #FFFFFF;
 }
 .pos-toggles {
   display: flex;

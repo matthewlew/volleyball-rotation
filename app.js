@@ -2,7 +2,7 @@
 const App = {
   state: {
     v: 1,
-    t: 'The Rebels',
+    t: 'My Team',
     p: [],
     lineup: null,
     bench: []
@@ -21,8 +21,20 @@ const App = {
   parseUrl() {
     const hash = window.location.hash.substring(1);
     if (!hash) {
+      // Default initial state with 6 blank players for mobile-friendly editing
       this.state.lineup = null;
       this.state.bench = [];
+      this.state.t = 'My Team';
+      this.state.p = [
+        { id: 'p1', name: 'Player 1', pos: [], here: true },
+        { id: 'p2', name: 'Player 2', pos: [], here: true },
+        { id: 'p3', name: 'Player 3', pos: [], here: true },
+        { id: 'p4', name: 'Player 4', pos: [], here: true },
+        { id: 'p5', name: 'Player 5', pos: [], here: true },
+        { id: 'p6', name: 'Player 6', pos: [], here: true }
+      ];
+      // Sync it immediately so they can refresh
+      this.updateUrl();
       return;
     }
 
@@ -110,7 +122,9 @@ const App = {
                 aria-label="${p.name} is here"
                 role="switch"
                 aria-checked="${p.here}"></button>
-        <span class="player-name">${this.escapeHtml(p.name)}</span>
+        <input type="text" class="player-name-input" value="${this.escapeHtml(p.name)}"
+               aria-label="Edit name for ${this.escapeHtml(p.name)}"
+               onchange="App.updatePlayerName('${p.id}', this.value)" />
 
         <div class="pos-toggles">
           <button class="pos-toggle ${p.pos.includes('S') ? 'active' : ''} ${isPrimaryS ? 'primary' : ''}"
@@ -144,6 +158,18 @@ const App = {
   updateTeamName(val) {
     this.state.t = val;
     this.updateUrl();
+  },
+
+  updatePlayerName(id, val) {
+    const p = this.state.p.find(player => player.id === id);
+    if (p) {
+      p.name = val.trim() || 'Player'; // Fallback to 'Player' if empty
+      this.updateUrl();
+      // We don't re-render immediately to prevent losing focus if they are tabbing through
+      // The DOM is already updated since it's an input field.
+      // But if we want to ensure state matches (like ARIA labels), we might need to.
+      // Let's just update the URL for now.
+    }
   },
 
   toggleHere(id) {
