@@ -260,9 +260,13 @@ const App = {
     this.state.lineup = best.lineup;
     this.state.bench = best.bench;
 
-    // Could store all proposals if we wanted tabs, but PRD says "Option tabs ... shown only if multiple proposals exist."
     this.state.proposals = result.proposals;
     this.state.selectedProposalIndex = 0;
+    this.state.rotationCount = 0;
+    this.state.viewMode = 'serve';
+    this.state.selectedPos = null;
+    this.state.lineupHistory = [{ lineup: { ...best.lineup }, bench: [...best.bench] }];
+    this.state.historyIndex = 0;
 
     this.updateUrl();
     this.render();
@@ -297,128 +301,157 @@ const App = {
     return { text: 'Unknown', class: '' }; // Cannot
   },
 
-  renderCourtToken(pNum, isReadOnly) {
-    const playerId = this.state.lineup[pNum];
+  // ── Court cell (replaces old renderCourtToken) ────────────────────────────
+  renderCourtCell(posNum, isReadOnly, viewMode) {
+    const playerId = this.state.lineup[posNum];
     const player = this.state.p.find(p => p.id === playerId);
-    if (!player) return '';
+    if (!player) return `<div class="court-cell" data-pos="${posNum}"></div>`;
 
     const playerIndex = this.state.p.findIndex(x => x.id === playerId) + 1;
-    const displayName = player.name && player.name.trim()
-      ? Share.formatName(player.name, this.state.p)
-      : `P${playerIndex}`;
-    const role = this.getPosRole(pNum);
-    const isServing = pNum == 1;
+    const rawName = player.name && player.name.trim() ? player.name : `P${playerIndex}`;
+    const shortName = Share.formatName(rawName, this.state.p);
+    const role = this.getPosRole(posNum);
+    const isServing = posNum == 1;
+    const isSelected = this.state.selectedPos === posNum;
+    const inPlayNote = viewMode === 'play' ? this.getInPlayNote(role, posNum) : '';
 
-    // To support touch animations, we might want to attach an id to the token
+    const tokenClasses = [
+      'court-token',
+      `role-${role}`,
+      isServing ? 'is-serving' : '',
+      isSelected ? 'selected' : ''
+    ].filter(Boolean).join(' ');
+
+    const dragAttrs = !isReadOnly
+      ? `draggable="true" ondragstart="App.dragStart(${posNum})" ondragend="App.dragEnd()"`
+      : '';
+    const cellAttrs = !isReadOnly
+      ? `ondragover="event.preventDefault()" ondrop="App.dropOnPos(${posNum})" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"`
+      : '';
+
     return `
-      <div class="court-token role-${role}" id="pos-${pNum}"
-           ${isReadOnly ? '' : `onclick="App.showRoleInfo('${role}', ${pNum})"`}
-           role="button" aria-label="${displayName}, ${this.getRoleName(role)}${isServing ? ' (serving)' : ''}">
-        <div class="token-name">${this.escapeHtml(displayName)}</div>
-        <div class="token-role">${role}</div>
-        ${isServing ? `<div class="token-mic">🎤</div>` : ''}
-        ${!isReadOnly ? `<button class="token-info-btn" aria-label="Role info" onclick="event.stopPropagation(); App.showRoleInfo('${role}', ${pNum})">ⓘ</button>` : ''}
+      <div class="court-cell" data-pos="${posNum}" ${cellAttrs}>
+        <div class="pos-number">P${posNum}</div>
+        <div class="${tokenClasses}"
+             id="pos-${posNum}"
+             ${dragAttrs}
+             ${!isReadOnly ? `onclick="App.selectPos(${posNum})"` : ''}
+             role="button" tabindex="0"
+             aria-label="${this.escapeHtml(shortName)}, ${this.getRoleName(role)}${isServing ? ', serving' : ''}${isSelected ? ', selected to swap' : ''}">
+          <div class="token-avatar">${role}</div>
+          ${isServing ? `<span class="token-mic-icon">🎤</span>` : ''}
+        </div>
+        <div class="token-name-label ${isServing ? 'serving' : ''}">${this.escapeHtml(shortName)}</div>
+        ${inPlayNote ? `<div class="token-action-note">${inPlayNote}</div>` : ''}
       </div>
     `;
   },
 
+  // ── Lineup screen ──────────────────────────────────────────────────────────
   renderLineup(container) {
-    // Is read only if there's no editing capabilities (i.e. just a URL shared)
-    // We can assume if they don't have local state changes or it's a fresh load with just lineup
-    // Actually PRD says: "Screen 3: Read-Only Lineup (shared URL)"
-    // The way to check if it's a shared URL might be if they haven't modified it?
-    // Or if `p` array has exactly 6 players and we don't know the full roster?
-    // Wait, the shared URL has the full `p` array.
-    // Let's implement full view and read-only based on PRD: "Roster URL (no lineup key) ... Lineup URL (with lineup + bench): shared to WhatsApp, opens read-only court view."
-    // If we land on a URL WITH a lineup key on fresh load, it's read-only.
-    // If we clicked "Generate", it's interactive (has Back button).
-    // Let's assume for now `this.state.isReadOnly` could be set, or we just render the "Back" button always which brings them to the Roster screen.
-    // PRD: "Screen 2: Lineup ... Header: Back button → returns to player screen without losing state."
-    // PRD: "Screen 3: Read-Only Lineup (shared URL) ... Same court diagram as Screen 2, no editing controls. Bottom of page — acquisition hook: Build your own lineup → subin.app"
-    // Let's add a flag in state `isSharedView` which we set to true if `init()` finds `lineup` in the hash on first load.
-
     const isReadOnly = this.state.isSharedView;
+    const viewMode = this.state.viewMode || 'serve';
+    const history = this.state.lineupHistory || [];
+    const canUndo = (this.state.historyIndex || 0) > 0;
+    const canRedo = (this.state.historyIndex || 0) < history.length - 1;
 
-    let ariaLabelArray = [];
-    const p4 = this.state.p.find(p => p.id === this.state.lineup[4]);
-    const p3 = this.state.p.find(p => p.id === this.state.lineup[3]);
-    const p2 = this.state.p.find(p => p.id === this.state.lineup[2]);
-    const p5 = this.state.p.find(p => p.id === this.state.lineup[5]);
-    const p6 = this.state.p.find(p => p.id === this.state.lineup[6]);
-    const p1 = this.state.p.find(p => p.id === this.state.lineup[1]);
+    const rotationCount = this.state.rotationCount || 0;
+    const serveNum = ((rotationCount % 6) + 6) % 6 + 1;
 
-    const formatAria = (p, role) => p ? `${Share.formatName(p.name, this.state.p)} ${this.getRoleName(role)}` : '';
-    const ariaLabel = `Front row: ${formatAria(p4, 'S')}, ${formatAria(p3, 'M')}, ${formatAria(p2, 'O')}. Back row: ${formatAria(p5, 'O')}, ${formatAria(p6, 'M')}, ${formatAria(p1, 'S')} serving.`;
+    const p1Id = this.state.lineup[1];
+    const p1 = this.state.p.find(p => p.id === p1Id);
+    const p1Idx = this.state.p.findIndex(p => p.id === p1Id) + 1;
+    const serverName = p1 ? (p1.name?.trim() || `P${p1Idx}`) : '';
 
-    const activeIndex = this.state.selectedProposalIndex || 0;
+    const ariaLabel = [4,3,2,5,6,1].map(posNum => {
+      const id = this.state.lineup[posNum];
+      const pl = this.state.p.find(p => p.id === id);
+      if (!pl) return '';
+      const idx = this.state.p.findIndex(p => p.id === id) + 1;
+      const n = pl.name?.trim() || `P${idx}`;
+      return `${n}: ${this.getRoleName(this.getPosRole(posNum))}`;
+    }).filter(Boolean).join(', ');
+
+    const benchHtml = (this.state.bench || []).map(id => {
+      const p = this.state.p.find(x => x.id === id);
+      if (!p) return '';
+      const idx = this.state.p.findIndex(x => x.id === id) + 1;
+      return this.escapeHtml(p.name?.trim() || `P${idx}`);
+    }).filter(Boolean).join(' &middot; ') || 'None';
 
     let html = `
       <header class="lineup-header">
-        ${!isReadOnly ? `<button onclick="App.backToRoster()" aria-label="Back to roster" class="back-btn">&larr; Back</button>` : ''}
+        ${!isReadOnly ? `<button onclick="App.backToRoster()" class="back-btn" aria-label="Back to roster">&larr; Back</button>` : ''}
         <h1>${this.escapeHtml(this.state.t)}</h1>
+        ${!isReadOnly ? `
+          <div class="undo-redo" role="group" aria-label="Undo / Redo">
+            <button onclick="App.undoLineup()" ${!canUndo ? 'disabled' : ''} aria-label="Undo" title="Undo swap">↩</button>
+            <button onclick="App.redoLineup()" ${!canRedo ? 'disabled' : ''} aria-label="Redo" title="Redo swap">↪</button>
+          </div>
+        ` : ''}
       </header>
 
-      ${this.state.proposals && this.state.proposals.length > 1 && !isReadOnly ? `
-        <div class="tabs" role="tablist">
-          <button role="tab" aria-selected="${activeIndex === 0}" onclick="App.selectProposal(0)">Best</button>
-          ${this.state.proposals.length > 1 ? `<button role="tab" aria-selected="${activeIndex === 1}" onclick="App.selectProposal(1)">Alt 1</button>` : ''}
-          ${this.state.proposals.length > 2 ? `<button role="tab" aria-selected="${activeIndex === 2}" onclick="App.selectProposal(2)">Alt 2</button>` : ''}
+      ${!isReadOnly ? `
+        <div class="mode-toggle" role="group" aria-label="View mode">
+          <button class="${viewMode === 'serve' ? 'active' : ''}" onclick="App.setViewMode('serve')">Before Serve</button>
+          <button class="${viewMode === 'play' ? 'active' : ''}" onclick="App.setViewMode('play')">Ball in Play</button>
         </div>
       ` : ''}
 
-      <div class="court-container" role="img" aria-label="${ariaLabel}">
-        <div class="net-line"></div>
-        <div class="court-grid">
-          <div class="court-cell">${this.renderCourtToken(4, isReadOnly)}</div>
-          <div class="court-cell">${this.renderCourtToken(3, isReadOnly)}</div>
-          <div class="court-cell">${this.renderCourtToken(2, isReadOnly)}</div>
-          <div class="court-cell">${this.renderCourtToken(5, isReadOnly)}</div>
-          <div class="court-cell">${this.renderCourtToken(6, isReadOnly)}</div>
-          <div class="court-cell">${this.renderCourtToken(1, isReadOnly)}</div>
-        </div>
-      </div>
+      <p class="serve-indicator" aria-live="polite">
+        🎤 <strong>${this.escapeHtml(serverName)}</strong> serves &middot; Rotation ${serveNum}/6
+      </p>
 
-      <div class="bench-row">
-        <strong>Bench:</strong> ${this.state.bench.map(id => {
-          const p = this.state.p.find(x => x.id === id);
-          return p ? Share.formatName(p.name) : '';
-        }).filter(n => n).join(' &middot; ') || 'None'}
+      <div class="court-container ${viewMode}-mode" role="img" aria-label="${ariaLabel}">
+        <div class="net-bar"></div>
+        <div class="court-grid">
+          ${[4,3,2,5,6,1].map(posNum => this.renderCourtCell(posNum, isReadOnly, viewMode)).join('')}
+        </div>
       </div>
 
       ${!isReadOnly ? `
         <div class="rotation-controls">
-          <button onclick="App.simulateRotation(-1)" aria-label="Undo rotation">&larr; Undo</button>
-          <button onclick="App.simulateRotation(1)" aria-label="Rotate clockwise">&rarr; Rotate</button>
+          <button onclick="App.simulateRotation(-1)" aria-label="Undo rotation">&larr; Undo Rotate</button>
+          <button onclick="App.simulateRotation(1)" aria-label="Rotate clockwise">Rotate &rarr;</button>
         </div>
       ` : ''}
 
-      <table class="fit-table">
-        <thead>
-          <tr>
+      <div class="bench-row"><strong>Bench:</strong> ${benchHtml}</div>
+
+      ${!isReadOnly ? `
+        <table class="fit-table">
+          <thead><tr>
             <th scope="col">Position</th>
             <th scope="col">Player</th>
             <th scope="col">Fit</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${[4,3,2,5,6,1].map(posNum => {
-            const playerId = this.state.lineup[posNum];
-            const player = this.state.p.find(p => p.id === playerId);
-            if (!player) return '';
-            const requiredRole = this.getPosRole(posNum);
-            const fit = this.getPlayerFit(player, requiredRole);
-            return `
-              <tr>
+          </tr></thead>
+          <tbody>
+            ${[4,3,2,5,6,1].map(posNum => {
+              const playerId = this.state.lineup[posNum];
+              const player = this.state.p.find(p => p.id === playerId);
+              if (!player) return '';
+              const requiredRole = this.getPosRole(posNum);
+              const fit = this.getPlayerFit(player, requiredRole);
+              const pidx = this.state.p.findIndex(x => x.id === playerId) + 1;
+              const name = player.name?.trim() || `P${pidx}`;
+              return `<tr>
                 <td>${this.getRoleName(requiredRole)} (P${posNum})</td>
-                <td>${Share.formatName(player.name)}</td>
+                <td>${this.escapeHtml(name)}</td>
                 <td class="${fit.class}">${fit.text}</td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
 
-      ${!isReadOnly ? `
+        ${this.state.proposals && this.state.proposals.length > 1 ? `
+          <section class="suggestions-section">
+            <h2>Lineup Options</h2>
+            <div class="suggestion-cards">
+              ${this.state.proposals.map((prop, i) => this.renderSuggestionCard(prop, i)).join('')}
+            </div>
+          </section>
+        ` : ''}
+
         <div class="share-bar">
           <button onclick="App.shareImage()">Save image</button>
           <button onclick="App.copyText(this)">Copy text</button>
@@ -437,17 +470,161 @@ const App = {
   selectProposal(index) {
     if (this.state.proposals && this.state.proposals[index]) {
       const prop = this.state.proposals[index];
-      this.state.lineup = prop.lineup;
-      this.state.bench = prop.bench;
+      this.pushHistory();
+      this.state.lineup = { ...prop.lineup };
+      this.state.bench = [...prop.bench];
       this.state.selectedProposalIndex = index;
+      this.state.rotationCount = 0;
       this.updateUrl();
       this.render();
     }
   },
 
+  // ── History ────────────────────────────────────────────────────────────────
+  pushHistory() {
+    const history = this.state.lineupHistory || [];
+    const idx = this.state.historyIndex !== undefined ? this.state.historyIndex : history.length - 1;
+    const trimmed = history.slice(0, idx + 1);
+    trimmed.push({ lineup: { ...this.state.lineup }, bench: [...(this.state.bench || [])] });
+    this.state.lineupHistory = trimmed;
+    this.state.historyIndex = trimmed.length - 1;
+  },
+
+  undoLineup() {
+    const history = this.state.lineupHistory || [];
+    if ((this.state.historyIndex || 0) > 0) {
+      this.state.historyIndex--;
+      const snap = history[this.state.historyIndex];
+      this.state.lineup = { ...snap.lineup };
+      this.state.bench = [...snap.bench];
+      this.state.selectedPos = null;
+      this.updateUrl();
+      this.render();
+    }
+  },
+
+  redoLineup() {
+    const history = this.state.lineupHistory || [];
+    const idx = this.state.historyIndex || 0;
+    if (idx < history.length - 1) {
+      this.state.historyIndex++;
+      const snap = history[this.state.historyIndex];
+      this.state.lineup = { ...snap.lineup };
+      this.state.bench = [...snap.bench];
+      this.state.selectedPos = null;
+      this.updateUrl();
+      this.render();
+    }
+  },
+
+  // ── Drag & Drop ────────────────────────────────────────────────────────────
+  dragStart(posNum) {
+    this.state.dragFrom = posNum;
+    this.state.selectedPos = null; // clear tap-select when dragging
+    setTimeout(() => {
+      const el = document.getElementById(`pos-${posNum}`);
+      if (el) el.classList.add('dragging');
+    }, 0);
+  },
+
+  dragEnd() {
+    document.querySelectorAll('.court-token.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.court-cell.drag-over').forEach(el => el.classList.remove('drag-over'));
+  },
+
+  dropOnPos(targetPos) {
+    document.querySelectorAll('.court-cell.drag-over').forEach(el => el.classList.remove('drag-over'));
+    const from = this.state.dragFrom;
+    this.state.dragFrom = null;
+    if (from === null || from === undefined || from === targetPos) return;
+    this.pushHistory();
+    const tmp = this.state.lineup[targetPos];
+    this.state.lineup[targetPos] = this.state.lineup[from];
+    this.state.lineup[from] = tmp;
+    this.updateUrl();
+    this.render();
+  },
+
+  // ── Tap-to-swap (mobile-friendly alternative to drag) ─────────────────────
+  selectPos(posNum) {
+    const prev = this.state.selectedPos;
+    if (prev === posNum) {
+      // Deselect
+      this.state.selectedPos = null;
+      this.render();
+      return;
+    }
+    if (prev !== null && prev !== undefined) {
+      // Swap prev ↔ posNum
+      this.pushHistory();
+      const tmp = this.state.lineup[posNum];
+      this.state.lineup[posNum] = this.state.lineup[prev];
+      this.state.lineup[prev] = tmp;
+      this.state.selectedPos = null;
+      this.updateUrl();
+      this.render();
+      this.showToast('Swapped!');
+    } else {
+      // First tap — select
+      this.state.selectedPos = posNum;
+      // Highlight via class without full re-render for snappiness
+      document.querySelectorAll('.court-token.selected').forEach(el => el.classList.remove('selected'));
+      const el = document.getElementById(`pos-${posNum}`);
+      if (el) el.classList.add('selected');
+    }
+  },
+
+  // ── View mode (Before Serve / Ball in Play) ────────────────────────────────
+  setViewMode(mode) {
+    this.state.viewMode = mode;
+    this.state.selectedPos = null;
+    this.render();
+  },
+
+  // ── In-play movement annotations ───────────────────────────────────────────
+  getInPlayNote(role, posNum) {
+    const isBack = posNum === 1 || posNum === 5 || posNum === 6;
+    if (role === 'S') return isBack ? 'Run RF ↗' : 'Set →';
+    if (role === 'M') return isBack ? 'Dig tips' : 'Block + Swing';
+    if (role === 'O') return isBack ? 'Pass line' : 'Attack LF';
+    return '';
+  },
+
+  // ── Star ratings for suggestions ──────────────────────────────────────────
+  getStars(score) {
+    const filled = Math.max(1, Math.round((score / 18) * 5));
+    return '★'.repeat(filled) + '☆'.repeat(5 - filled);
+  },
+
+  renderSuggestionCard(proposal, index) {
+    const isActive = index === (this.state.selectedProposalIndex || 0);
+    const stars = this.getStars(proposal.score);
+    const setterNames = [proposal.lineup[4], proposal.lineup[1]].map(id => {
+      const p = this.state.p.find(x => x.id === id);
+      if (!p) return '';
+      const idx = this.state.p.findIndex(x => x.id === id) + 1;
+      return p.name?.trim() || `P${idx}`;
+    }).filter(Boolean);
+    const label = index === 0 ? 'Best fit' : `Option ${index + 1}`;
+    return `
+      <div class="suggestion-card ${isActive ? 'active' : ''}"
+           onclick="App.selectProposal(${index})" role="button" tabindex="0"
+           aria-pressed="${isActive}">
+        <div class="suggestion-stars">${stars}</div>
+        <div class="suggestion-info">
+          <div class="suggestion-label">${label}</div>
+          <div class="suggestion-detail">Setters: ${setterNames.map(n => this.escapeHtml(n)).join(' &amp; ')}</div>
+        </div>
+      </div>
+    `;
+  },
+
   simulateRotation(direction) {
     // direction = 1 for clockwise (rotate), -1 for counter-clockwise (undo)
     // 4->3, 3->2, 2->1, 1->6, 6->5, 5->4
+    this.pushHistory();
+    this.state.rotationCount = (this.state.rotationCount || 0) + direction;
+
     const oldLineup = { ...this.state.lineup };
     const newLineup = {};
     if (direction === 1) {
@@ -509,6 +686,14 @@ const App = {
             requestAnimationFrame(() => {
               newCourt.style.transition = 'opacity 150ms';
               newCourt.style.opacity = '1';
+              // Trigger slide-in animation for new server position
+              if (direction === 1) {
+                const cell1 = document.querySelector('.court-cell[data-pos="1"]');
+                if (cell1) {
+                  cell1.classList.add('just-rotated');
+                  setTimeout(() => cell1.classList.remove('just-rotated'), 500);
+                }
+              }
             });
           }
         }, 150);
@@ -524,7 +709,9 @@ const App = {
     const newServerId = this.state.lineup[1];
     const newServer = this.state.p.find(p => p.id === newServerId);
     if (newServer) {
-      this.showToast(`${Share.formatName(newServer.name)} now serves.`);
+      const sIdx = this.state.p.findIndex(p => p.id === newServerId) + 1;
+      const sName = newServer.name?.trim() || `P${sIdx}`;
+      this.showToast(`${Share.formatName(sName)} now serves.`);
     }
   },
 
